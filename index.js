@@ -23,6 +23,8 @@ class client{
 
 class Remote3DObject{
     constructor(object, builder, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1){
+        this.dirty = false
+
         if(object != null){
             this.builder = object.builder;
             this.x = object.x;
@@ -96,21 +98,25 @@ function savePlayerData(data, auth){
 }
 
 function joinRoom(socket, clientID){
-    let gameData = JSON.parse(fs.readFileSync('./GameData.json').toString())
+    if(fs.existsSync('./players/' + clients[clientID].ID + '.json')){
+        let gameData = JSON.parse(fs.readFileSync('./GameData.json').toString())
 
-    let data = {
-        player: JSON.parse(fs.readFileSync('./players/' + clients[clientID].ID + '.json').toString()),
-        gameData: gameData
+        let data = {
+            player: JSON.parse(fs.readFileSync('./players/' + clients[clientID].ID + '.json').toString()),
+            gameData: gameData
+        }
+
+        socket.emit('joined-room', data)
     }
-
-    socket.emit('joined-room', data)
 }
 
 function updateRemotes(){
     let data = []
 
     for (let i = 0; i < remote3DObjects.length; i++) {
-        data.push(remote3DObjects[i].toObject());
+        if(remote3DObjects[i].dirty){
+            data.push(remote3DObjects[i].toObject());
+        }
     }
 
     io.emit('update-remotes', data);
@@ -159,30 +165,32 @@ io.on('connection', (socket) => {
     socket.on('created-character', characterData => {
         savePlayerData(characterData, clients[clientID].ID)
 
-        joinRoom(socket, clientID)
+        socket.emit('request-auth', clients[clientID].ID)
     })
 
     socket.on('update-player-data', data => {
-        console.log('Updating player data: ' + clients[clientID].ID);
+        console.log('Updating player data: ' + clients[clientID].ID)
 
         savePlayerData(data, clients[clientID].ID)
     })
     
     socket.on('update-remote', data => {
-        console.log('Updating remote: ' + data.ID);
+        //console.log('Updating remote: ' + data.ID);
 
         let remote = remote3DObjects.find(remote => remote.ID == data.ID)
 
         if(remote != null){
             remote.update(data)
+
+            remote.dirty = true
         }
 
         updateRemotes()
     })
 
-    console.log('User connected!');
+    console.log('User connected!')
 
-    socket.emit('request-auth', clients[clients.length-1].ID)
+    socket.emit('request-auth', clients[clientID].ID)
 });
 
 io.on('disconnect', socket => {
