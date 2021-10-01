@@ -158,10 +158,6 @@ io.on('connection', (socket) => {
         io.emit('create-remote-3D-object', remote3DObjects[remote3DObjects.length-1].toObject())
     })
 
-    socket.on('new-player-join-room', playerData =>{
-        socket.emit('joined-room', playerData)
-    })
-
     socket.on('created-character', characterData => {
         savePlayerData(characterData, clients[clientID].ID)
 
