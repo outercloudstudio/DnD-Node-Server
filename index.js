@@ -14,10 +14,13 @@ let clients = []
 
 let remote3DObjects = []
 
+let clientIDOffset = 0
+
 class client{
-    constructor(socket, ID){
-        this.socket = socket;
-        this.ID = ID;
+    constructor(socket, ID, data){
+        this.socket = socket
+        this.ID = ID
+        this.data = data
     }
 }
 
@@ -91,7 +94,9 @@ function randomFloatFromInterval(min, max) {
     return Math.random() * (max - min) + min
 }
 
-function savePlayerData(data, auth){
+function savePlayerData(data, auth, clientID){
+    clients[clientID + clientIDOffset].data = data
+
     let json = JSON.stringify(data)
 
     if(!fs.existsSync('./players/')){
@@ -102,11 +107,16 @@ function savePlayerData(data, auth){
 }
 
 function joinRoom(socket, clientID){
-    if(fs.existsSync('./players/' + clients[clientID].ID + '.json')){
+    if(fs.existsSync('./players/' + clients[clientID + clientIDOffset].ID + '.json')){
         let gameData = JSON.parse(fs.readFileSync('./GameData.json').toString())
+        let playerData = JSON.parse(fs.readFileSync('./players/' + clients[clientID + clientIDOffset].ID + '.json').toString())
+
+        console.log(playerData.playerName + ' has joined the room.')
+
+        clients[clientID + clientIDOffset].data = playerData
 
         let data = {
-            player: JSON.parse(fs.readFileSync('./players/' + clients[clientID].ID + '.json').toString()),
+            player: playerData,
             gameData: gameData
         }
 
@@ -127,9 +137,9 @@ function updateRemotes(){
 }
 
 io.on('connection', (socket) => {
-    clients.push(new client(socket, 'Guest-' + uuidv4()))
+    clients.push(new client(socket, 'Guest-' + uuidv4(), null))
 
-    clientID = clients.length - 1
+    clientID = clients.length - 1 - clientIDOffset
 
     socket.on('send-auth', authData => {
         console.log('Received Auth');
@@ -139,13 +149,13 @@ io.on('connection', (socket) => {
 
             console.log('New user: ' + ID + ' logged in!');
 
-            clients[clientID].ID = ID
+            clients[clientID + clientIDOffset].ID = ID
 
             socket.emit('new-user-accepted-auth', ID)
         }else{
             console.log('Existing user: ' + authData.proposed + ' logged in!');
     
-            clients[clientID].ID = authData.proposed
+            clients[clientID + clientIDOffset].ID = authData.proposed
 
             socket.emit('accepted-auth', authData.proposed)
         }
@@ -160,15 +170,15 @@ io.on('connection', (socket) => {
     })
 
     socket.on('created-character', characterData => {
-        savePlayerData(characterData, clients[clientID].ID)
+        savePlayerData(characterData, clients[clientID + clientIDOffset].ID, clientID)
 
-        socket.emit('request-auth', clients[clientID].ID)
+        socket.emit('request-auth', clients[clientID + clientIDOffset].ID)
     })
 
     socket.on('update-player-data', data => {
-        console.log('Updating player data: ' + clients[clientID].ID)
+        console.log('Updating player data: ' + clients[clientID] + clientIDOffset.ID)
 
-        savePlayerData(data, clients[clientID].ID)
+        savePlayerData(data, clients[clientID + clientIDOffset].ID, clientID)
     })
     
     socket.on('update-remote', data => {
@@ -214,17 +224,29 @@ io.on('connection', (socket) => {
         }
     })
 
+    socket.on('get-players', () => {
+        console.log('Getting players')
+
+        let data = []
+
+        for (let i = 0; i < clients.length; i++) {
+            data.push(clients[i].data)
+        }
+
+        socket.emit('set-players', data)
+    })
+
+    socket.on('disconnect', socket => {
+        clients.splice(clientID + clientIDOffset, 1)
+        clientIDOffset--
+    })
+
     console.log('User connected!')
 
-    socket.emit('request-auth', clients[clientID].ID)
-});
+    console.log(clients.length)
+    console.log(clientID + clientIDOffset)
 
-io.on('disconnect', socket => {
-    for (let i = 0; i < clients.length; i++) {
-        if(clients[i].socket.id == socket.id){
-            clients.splice(i, 1)
-        }
-    }
+    socket.emit('request-auth', clients[clientID + clientIDOffset].ID)
 })
 
 http.listen(25566, () => console.log('listening on http://localhost:25566') );
