@@ -87,6 +87,10 @@ function randomIntFromInterval(min, max) {
     return Math.floor(Math.random() * (max - min + 1) + min)
 }
 
+function randomFloatFromInterval(min, max) {
+    return Math.random() * (max - min) + min
+}
+
 function savePlayerData(data, auth){
     let json = JSON.stringify(data)
 
@@ -153,9 +157,6 @@ io.on('connection', (socket) => {
         for (let i = 0; i < remote3DObjects.length; i++) {
             socket.emit('create-remote-3D-object', remote3DObjects[i].toObject())
         }
-
-        remote3DObjects.push(new Remote3DObject(null, 'cube', randomIntFromInterval(-5, 5), 0, randomIntFromInterval(-5, 5), 0, 0, 0, 1, 1, 1))
-        io.emit('create-remote-3D-object', remote3DObjects[remote3DObjects.length-1].toObject())
     })
 
     socket.on('created-character', characterData => {
@@ -182,6 +183,35 @@ io.on('connection', (socket) => {
         }
 
         updateRemotes()
+    })
+
+    socket.on('new-miniture', type => {
+        remote3DObjects.push(new Remote3DObject(null, 'miniture-' + type, randomFloatFromInterval(-.2, .2), .7, randomFloatFromInterval(-.2, .2), 0, 0, 0, 1, 1, 1))
+        io.emit('create-remote-3D-object', remote3DObjects[remote3DObjects.length-1].toObject())
+    })
+
+    socket.on('delete-minitures', () => {
+        console.log('Deleting minitures')
+
+        for (let i = 0; i < remote3DObjects.length; i++) {
+            if(remote3DObjects[i].builder.substring(0, 8) == 'miniture'){
+                io.emit('delete-remote-3D-object', remote3DObjects[i].ID)
+
+                remote3DObjects.splice(i, 1)
+
+                i--
+            }
+        }
+    })
+
+    socket.on('delete-remote-3D-object', ID => {
+        io.emit('delete-remote-3D-object', ID)
+
+        let remote = remote3DObjects.find(remote => remote.ID == ID)
+
+        if(remote != null){
+            remote3DObjects.splice(remote3DObjects.indexOf(remote), 1)
+        }
     })
 
     console.log('User connected!')
