@@ -9,9 +9,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "cannon": "^0.6.2",
     "ping": "^0.4.1",
     "socket.io": "^3.1.2",
     "tcp-ping": "^0.1.1",
+    "three": "^0.133.1",
     "uuid": "^8.3.2",
     "ws": "^7.4.1"
   },
