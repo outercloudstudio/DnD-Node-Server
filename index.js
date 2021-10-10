@@ -12,7 +12,6 @@ const io = require('socket.io')(http, {
 const THREE = require('three')
 const CANNON = require('cannon')
 
-
 class Collider{
     constructor(colliderShape){
         this.shape = colliderShape
@@ -138,6 +137,26 @@ class Component{
             this.value.PreUpdate(deltaTime)
         }
     }
+
+    RemoteUpdate(){
+        return this.value.RemoteUpdate()
+    }
+
+    ReceiveUpdate(update){
+        this.value.ReceiveUpdate(update)
+    }
+
+    PrePhysicsUpdate(deltaTime){
+        if(this.value.PrePhysicsUpdate != null){
+            this.value.PrePhysicsUpdate(deltaTime)
+        }
+    }
+
+    Destroy(){
+        if(this.value.Destroy != null){
+            this.value.Destroy()
+        }
+    }
 }
 
 class Transform{
@@ -166,6 +185,12 @@ class Transform{
             scale: this.scale,
         }
     }
+
+    ReceiveUpdate(update){
+        this.position = new THREE.Vector3(update.position.x, update.position.y, update.position.z)
+        this.rotation = new THREE.Quaternion(update.rotation._x, update.rotation._y, update.rotation._z, update.rotation._w)
+        this.scale = new THREE.Vector3(update.scale.x, update.scale.y, update.scale.z)
+    }
 }
 
 class Renderer{
@@ -182,7 +207,7 @@ class Renderer{
     init(gameObject){
         this.gameObject = gameObject
 
-        this.addToScene(scene)
+        //this.addToScene(scene)
     }
 
     addToScene(scene){
@@ -203,9 +228,9 @@ class Renderer{
                 this.object3D.quaternion.set(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w)
                 this.object3D.scale.set(transform.scale.x, transform.scale.y, transform.scale.z)
 
-                updateMaterialHDRI(this.object3D)
+                //updateMaterialHDRI(this.object3D)
 
-                scene.add(this.object3D)
+                //scene.add(this.object3D)
             }
 
             if(this.builder == 'miniture-base'){
@@ -282,6 +307,28 @@ class Renderer{
             this.object3D.scale.set(transform.scale.x, transform.scale.y, transform.scale.z)
         }
     }
+
+    PrePhysicsUpdate(deltaTime){
+        if(this.object3D != null){
+            if(transformer.object == this.object3D){
+                let transform = this.gameObject.GetComponent('Transform')
+
+                transform.position.set(this.object3D.position.x, this.object3D.position.y, this.object3D.position.z)
+                transform.rotation.set(this.object3D.quaternion.x, this.object3D.quaternion.y, this.object3D.quaternion.z, this.object3D.quaternion.w)
+                transform.scale.set(this.object3D.scale.x, this.object3D.scale.y, this.object3D.scale.z)
+            }
+        }
+    }
+
+    Destroy(){
+        /*if(this.object3D != null){
+            if(transformer.object == this.object3D){
+                transformer.detach()
+            }
+
+            this.object3D.removeFromParent()
+        }*/
+    }
 }
 
 class RigidBody{
@@ -302,7 +349,7 @@ class RigidBody{
 
         let collider = this.gameObject.GetComponent('Collider')
 
-        let colliderShape = null
+        let colliderShape = new CANNON.Box(new CANNON.Vec3(.5, .5, .5))
 
         let transform = this.gameObject.GetComponent('Transform')
 
@@ -314,8 +361,7 @@ class RigidBody{
         }else if(collider.shape.type == 'Sphere'){
             colliderShape = new CANNON.Sphere(collider.shape.radius * transform.scale.x)
         }else if(collider.shape.type == 'D20'){
-            let result = GeometryToData(D20Geometry)
-            console.log(result)
+            /*let result = GeometryToData(D20Geometry)
 
             for (let i = 0; i < result.vertices.length; i++) {
                 result.vertices[i].x *= transform.scale.x
@@ -326,7 +372,7 @@ class RigidBody{
             colliderShape = new CANNON.ConvexPolyhedron(result.vertices, result.faces)
 
             collisionGroup = 2
-            collisionMask = 1
+            collisionMask = 1*/
         }else{
             console.error('Collider type ' + collider.shape.type + ' not supported')
         }
@@ -357,6 +403,21 @@ class RigidBody{
         return{
             velocity: this.rigidBody.velocity,
         }
+    }
+
+    ReceiveUpdate(data){
+        this.rigidBody.velocity.set(data.velocity.x, data.velocity.y, data.velocity.z)
+    }
+
+    PrePhysicsUpdate(deltaTime){
+        let transform = this.gameObject.GetComponent('Transform')
+
+        this.rigidBody.position.set(transform.position.x, transform.position.y, transform.position.z)
+        this.rigidBody.quaternion.set(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w)
+    }
+
+    Destroy(){
+        //physicsWorld.remove(this.rigidBody)
     }
 }
 
@@ -400,40 +461,52 @@ class GameObject{
     }
 
     Update(deltaTime){
-        if(this.components){
-            for (let i = 0; i < this.components.length; i++) {
-                this.components[i].PreUpdate(deltaTime)
-            }
+        for (let i = 0; i < this.components.length; i++) {
+            this.components[i].PreUpdate(deltaTime)
         }
 
-        if(this.components){
-            for (let i = 0; i < this.components.length; i++) {
-                this.components[i].Update(deltaTime)
-            }
+        for (let i = 0; i < this.components.length; i++) {
+            this.components[i].Update(deltaTime)
         }
     }
 
     RemoteUpdate(){
-        let updateData = []
+        if(this.owner){
+            let updateData = []
 
-        for (let i = 0; i < this.components.length; i++) {
-            if(this.components[i].networked){
-                if(this.components[i].RemoteUpdate() != null){
-                    updateData.push({
-                        type: this.components[i].type,
-                        data: this.components[i].RemoteUpdate(),
-                    })
+            for (let i = 0; i < this.components.length; i++) {
+                if(this.components[i].networked){
+                    if(this.components[i].RemoteUpdate != null){
+                        updateData.push({
+                            type: this.components[i].type,
+                            data: this.components[i].RemoteUpdate(),
+                        })
+                    }
                 }
             }
-        }
 
-        if(updateData.length > 0){
-            updateData = {
-                ID: this.ID,
-                data: updateData,
+            if(updateData.length > 0){
+                updateData = {
+                    ID: this.ID,
+                    data: updateData,
+                }
+
+                socket.emit('update-game-object', updateData)
             }
+        }
+    }
 
-            socket.emit('update-game-object', updateData)
+    ReceiveUpdate(updateData){
+        for (let i = 0; i < updateData.length; i++) {
+            //console.log(updateData[i].data)
+            let component = this.GetComponent(updateData[i].type)
+            component.ReceiveUpdate(updateData[i].data)
+        }
+    }
+
+    PrePhysicsUpdate(deltaTime){
+        for (let i = 0; i < this.components.length; i++) {
+            this.components[i].PrePhysicsUpdate(deltaTime)
         }
     }
 
@@ -453,7 +526,7 @@ class GameObject{
             if(componentType == 'Transform'){
                 this.components.push(
                     new Component(
-                        new Transform(new THREE.Vector3(componentValue.position.x, componentValue.position.y, componentValue.position.z), new THREE.Quaternion(componentValue.rotation.x, componentValue.rotation.y, componentValue.rotation.z, componentValue.rotation.w), new THREE.Vector3(componentValue.scale.x, componentValue.scale.y, componentValue.scale.z)),
+                        new Transform(new THREE.Vector3(componentValue.position.x, componentValue.position.y, componentValue.position.z), new THREE.Quaternion(componentValue.rotation._x, componentValue.rotation._y, componentValue.rotation._z, componentValue.rotation._w), new THREE.Vector3(componentValue.scale.x, componentValue.scale.y, componentValue.scale.z)),
                         componentNetworked
                     )
                 )
@@ -528,57 +601,30 @@ class GameObject{
         }
     }
 
-    //TODO: network componenets
-
-    /*update(object, lerpPos = false){
-        if(object != null){
-            this.x = object.x
-            this.y = object.y
-            this.z = object.z
-            this.targetX = object.x
-            this.targetY = object.y
-            this.targetZ = object.z
-            this.rx = object.rx
-            this.ry = object.ry
-            this.rz = object.rz
-            this.sx = object.sx
-            this.sy = object.sy
-            this.sz = object.sz
+    Destroy(){
+        for (let i = 0; i < this.components.length; i++) {
+            this.components[i].Destroy()
         }
 
-        if(this.object3D != null){
-            if(!lerpPos){
-                this.object3D.position.set(this.x, this.y, this.z)
+        for (let i = 0; i < gameObjects.length; i++) {
+            if(gameObjects[i] == this){
+                gameObjects.splice(i, 1)
+                break
             }
+        }
 
-            this.object3D.rotation.set(this.rx, this.ry, this.rz)
-
-            console.log(this.sx)
-            this.object3D.scale.set(this.sx, this.sy, this.sz)
+        if(this.owner){
+            socket.emit('destroy-game-object', this.ID )
         }
     }
-
-    updateValues(){
-        this.x = this.object3D.position.x
-        this.y = this.object3D.position.y
-        this.z = this.object3D.position.z
-        this.targetX = this.object3D.position.x
-        this.targetY = this.object3D.position.y
-        this.targetZ = this.object3D.position.z
-        this.rx = this.object3D.rotation.x
-        this.ry = this.object3D.rotation.y
-        this.rz = this.object3D.rotation.z
-        this.sx = this.object3D.scale.x
-        this.sy = this.object3D.scale.y
-        this.sz = this.object3D.scale.z
-
-        this.dirty = true
-    }*/
 }
 
-let clients = []
+const physicsWorld = new CANNON.World()
 
-let remote3DObjects = []
+const physicsDamping = 0.01
+let timeScale = 0
+
+let clients = []
 
 let gameObjects = []
 
@@ -589,68 +635,6 @@ class client{
         this.socket = socket
         this.ID = ID
         this.data = data
-    }
-}
-
-class Remote3DObject{
-    constructor(object, builder, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1){
-        this.dirty = false
-
-        if(object != null){
-            this.builder = object.builder;
-            this.x = object.x;
-            this.y = object.y;
-            this.z = object.z;
-            this.rx = object.rx;
-            this.ry = object.ry;
-            this.rz = object.rz;
-            this.sx = object.sx;
-            this.sy = object.sy;
-            this.sz = object.sz;
-            this.ID = object.ID;
-        }else{
-            this.builder = builder;
-            this.x = x;
-            this.y = y;
-            this.z = z;
-            this.rx = rx;
-            this.ry = ry;
-            this.rz = rz;
-            this.sx = sx;
-            this.sy = sy;
-            this.sz = sz;
-            this.ID = uuidv4();
-        }
-    }
-
-    toObject(){
-        return {
-            builder: this.builder,
-            x: this.x,
-            y: this.y,
-            z: this.z,
-            rx: this.rx,
-            ry: this.ry,
-            rz: this.rz,
-            sx: this.sx,
-            sy: this.sy,
-            sz: this.sz,
-            ID: this.ID
-        }
-    }
-
-    update(object){
-        if(object != null){
-            this.x = object.x;
-            this.y = object.y;
-            this.z = object.z;
-            this.rx = object.rx;
-            this.ry = object.ry;
-            this.rz = object.rz;
-            this.sx = object.sx;
-            this.sy = object.sy;
-            this.sz = object.sz;
-        }
     }
 }
 
@@ -692,18 +676,6 @@ function joinRoom(socket, clientID){
     }
 }
 
-function updateRemotes(){
-    let data = []
-
-    for (let i = 0; i < remote3DObjects.length; i++) {
-        if(remote3DObjects[i].dirty){
-            data.push(remote3DObjects[i].toObject());
-        }
-    }
-
-    io.emit('update-remotes', data);
-}
-
 io.on('connection', (socket) => {
     clients.push(new client(socket, 'Guest-' + uuidv4(), null))
 
@@ -732,8 +704,8 @@ io.on('connection', (socket) => {
     socket.on('join-room', () =>{
         joinRoom(socket, clientID)
 
-        for (let i = 0; i < remote3DObjects.length; i++) {
-            socket.emit('create-remote-3D-object', remote3DObjects[i].toObject())
+        for (let i = 0; i < gameObjects.length; i++) {
+            socket.emit('create-game-object', gameObjects[i].toObject())
         }
     })
 
@@ -748,27 +720,8 @@ io.on('connection', (socket) => {
 
         savePlayerData(data, clients[clientID + clientIDOffset].ID, clientID)
     })
-    
-    socket.on('update-remote', data => {
-        //console.log('Updating remote: ' + data.ID);
 
-        let remote = remote3DObjects.find(remote => remote.ID == data.ID)
-
-        if(remote != null){
-            remote.update(data)
-
-            remote.dirty = true
-        }
-
-        updateRemotes()
-    })
-
-    socket.on('new-miniture', type => {
-        remote3DObjects.push(new Remote3DObject(null, 'miniture-' + type, randomFloatFromInterval(-.2, .2), .7, randomFloatFromInterval(-.2, .2), 0, 0, 0, 1, 1, 1))
-        io.emit('create-remote-3D-object', remote3DObjects[remote3DObjects.length-1].toObject())
-    })
-
-    socket.on('delete-minitures', () => {
+    /*socket.on('delete-minitures', () => {
         console.log('Deleting minitures')
 
         for (let i = 0; i < remote3DObjects.length; i++) {
@@ -780,17 +733,7 @@ io.on('connection', (socket) => {
                 i--
             }
         }
-    })
-
-    socket.on('delete-remote-3D-object', ID => {
-        io.emit('delete-remote-3D-object', ID)
-
-        let remote = remote3DObjects.find(remote => remote.ID == ID)
-
-        if(remote != null){
-            remote3DObjects.splice(remote3DObjects.indexOf(remote), 1)
-        }
-    })
+    })*/
 
     socket.on('get-players', () => {
         console.log('Getting players')
@@ -812,13 +755,34 @@ io.on('connection', (socket) => {
     })
 
     socket.on('create-game-object', object => { 
-        gameObjects.push(object)
+        let reconstruction = new GameObject([])
+        reconstruction.Reconstruct(object)
+    
+        gameObjects.push(reconstruction)
 
         socket.broadcast.emit('create-game-object', object)
     })
 
     socket.on('update-game-object', object => {
+        for (let i = 0; i < gameObjects.length; i++) {
+            if(gameObjects[i].ID == object.ID){
+                gameObjects[i].ReceiveUpdate(object.data)
+            }
+        }
+
         socket.broadcast.emit('update-game-object', object)
+    })
+
+    socket.on('destroy-game-object', ID => {
+        console.log('Destroying game object: ' + ID)
+
+        for (let i = 0; i < gameObjects.length; i++) {
+            if(gameObjects[i].ID == ID){
+                gameObjects[i].Destroy()
+            }
+        }
+
+        socket.broadcast.emit('destroy-game-object', ID)
     })
 
     console.log('User connected!')
